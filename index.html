@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PointCloud Viewer</title>
+  <style>
+    body, html { margin: 0; padding: 0; overflow: hidden; }
+    canvas { display: block; }
+    #upload { position: absolute; top: 10px; left: 10px; z-index: 1; }
+  </style>
+</head>
+<body>
+  <input type="file" id="upload" accept=".pcd" />
+  <script type="module" src="/src/main.ts"></script>
+  <div id="info" style="position: fixed; top: 10px; right: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; font-size: 14px; z-index: 10;">
+    <b>Bounding Box Controls</b><br>
+    Press <b>N</b> to start new box<br>
+    Scroll to rotate<br>
+    Click 4 points: Length → Width → Height<br>
+  </div>
+</body>
+</html>

@@ -1,0 +1,50 @@
+# Node.js dependencies
+node_modules/
+
+# database files
+public/*.pcd
+
+# Build output
+dist/
+out/
+build/
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE-specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+
+# Git-specific files
+.git/
+# .gitignore
+
+# Large files or assets (adjust as needed)
+public/*.pcd
+*.bak
+*.old
+
+# Miscellaneous
+coverage/
