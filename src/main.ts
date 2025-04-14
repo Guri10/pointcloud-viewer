@@ -8,3 +8,10 @@ initViewer();
 handleFileUpload();
 // initBoxDrawer();
 initBoxBuilder(); 
+
+
+// import { initViewer } from './viewer2';
+// import { initBoxDemo } from './boxDemo';
+
+// initViewer();
+// initBoxDemo();
