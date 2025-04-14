@@ -22,7 +22,7 @@ export function initBoxBuilder() {
   ground.rotateX(-Math.PI / 2);
   scene.add(ground);
 
-  // 🔑 Mode switching
+  // 🔑 Mode switching + exporting
   window.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
 
@@ -44,6 +44,16 @@ export function initBoxBuilder() {
         mode = 'resizing';
         console.log("📐 Resize mode: Click any face to resize.");
       }
+    }
+
+    if (key === 'e') {
+      if (!activeBox) {
+        console.warn('❌ No active box selected.');
+        return;
+      }
+      const box = activeBox.mesh;
+      const points = extractPointsInsideBox(box);
+      downloadPointsAsJSON(points);
     }
   });
 
@@ -89,6 +99,7 @@ export function initBoxBuilder() {
       const box = new BoundingBox(1, 1, 1, hit.point);
       boxes.push(box);
       scene.add(box.mesh);
+      activeBox = box;
       mode = 'idle';
       controls.enabled = true;
       return;
@@ -124,7 +135,7 @@ export function initBoxBuilder() {
           }
         }
 
-        break; // stop on first interactive box
+        break; // stop after the first interactive box
       }
     }
   });
@@ -136,7 +147,6 @@ export function initBoxBuilder() {
     dragOffset.set(0, 0, 0);
     dragAxis.set(0, 0, 0);
     getViewerElements().controls.enabled = true;
-    activeBox = null;
     if (mode !== 'placing') mode = 'idle';
   });
 }
@@ -155,10 +165,46 @@ function getIntersect(
   return hits[0] || null;
 }
 
-// 🧮 Convert mouse to normalized device coordinates
+// 🧮 Mouse NDC
 function getMouseVector(e: PointerEvent, renderer: THREE.WebGLRenderer): THREE.Vector2 {
   return new THREE.Vector2(
     (e.clientX / renderer.domElement.clientWidth) * 2 - 1,
     -(e.clientY / renderer.domElement.clientHeight) * 2 + 1
   );
+}
+
+// 📤 Extract and export points inside active box
+function extractPointsInsideBox(box: THREE.Mesh): number[][] {
+  const { scene } = getViewerElements();
+  const box3 = new THREE.Box3().setFromObject(box);
+  const pointsInside: number[][] = [];
+
+  scene.traverse(obj => {
+    if (obj instanceof THREE.Points) {
+      const geometry = obj.geometry as THREE.BufferGeometry;
+      const position = geometry.getAttribute('position');
+      for (let i = 0; i < position.count; i++) {
+        const point = new THREE.Vector3().fromBufferAttribute(position, i);
+        obj.localToWorld(point); // convert to world space
+        if (box3.containsPoint(point)) {
+          pointsInside.push([point.x, point.y, point.z]);
+        }
+      }
+    }
+  });
+
+  console.log(`✅ ${pointsInside.length} points inside the active box`);
+  return pointsInside;
+}
+
+function downloadPointsAsJSON(points: number[][]) {
+  const blob = new Blob([JSON.stringify(points, null, 2)], {
+    type: 'application/json'
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'selected_points.json';
+  a.click();
+  URL.revokeObjectURL(url);
 }
