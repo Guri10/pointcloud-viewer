@@ -22,7 +22,7 @@ export function initBoxBuilder() {
   ground.rotateX(-Math.PI / 2);
   scene.add(ground);
 
-  // 🔑 Mode switching + exporting
+
   window.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
 
@@ -57,7 +57,7 @@ export function initBoxBuilder() {
     }
   });
 
-  // 🖱 Pointer move — move or resize
+
   renderer.domElement.addEventListener('pointermove', (e) => {
     if (!pointerDown || !activeBox) return;
 
@@ -140,7 +140,7 @@ export function initBoxBuilder() {
     }
   });
 
-  // 🖱 Pointer up
+
   renderer.domElement.addEventListener('pointerup', () => {
     pointerDown = false;
     movePlane = null;
@@ -151,7 +151,7 @@ export function initBoxBuilder() {
   });
 }
 
-// 🔍 Get intersection
+
 function getIntersect(
   e: PointerEvent,
   camera: THREE.Camera,
@@ -165,7 +165,7 @@ function getIntersect(
   return hits[0] || null;
 }
 
-// 🧮 Mouse NDC
+
 function getMouseVector(e: PointerEvent, renderer: THREE.WebGLRenderer): THREE.Vector2 {
   return new THREE.Vector2(
     (e.clientX / renderer.domElement.clientWidth) * 2 - 1,
@@ -173,7 +173,7 @@ function getMouseVector(e: PointerEvent, renderer: THREE.WebGLRenderer): THREE.V
   );
 }
 
-// 📤 Extract and export points inside active box
+
 function extractPointsInsideBox(box: THREE.Mesh): number[][] {
   const { scene } = getViewerElements();
   const box3 = new THREE.Box3().setFromObject(box);
@@ -185,7 +185,7 @@ function extractPointsInsideBox(box: THREE.Mesh): number[][] {
       const position = geometry.getAttribute('position');
       for (let i = 0; i < position.count; i++) {
         const point = new THREE.Vector3().fromBufferAttribute(position, i);
-        obj.localToWorld(point); // convert to world space
+        obj.localToWorld(point); 
         if (box3.containsPoint(point)) {
           pointsInside.push([point.x, point.y, point.z]);
         }
