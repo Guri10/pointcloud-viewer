@@ -55,6 +55,10 @@ export function initBoxBuilder() {
       const points = extractPointsInsideBox(box);
       downloadPointsAsJSON(points);
     }
+
+    if (key === 'l') {
+      downloadAllBoxesAsLabeledJSON();
+    }
   });
 
 
@@ -96,7 +100,9 @@ export function initBoxBuilder() {
       const hit = getIntersect(e, camera, renderer, [ground]);
       if (!hit) return;
 
-      const box = new BoundingBox(1, 1, 1, hit.point);
+      // const box = new BoundingBox(1, 1, 1, hit.point);
+      const label = prompt("Enter label for this box:", `Box ${boxes.length + 1}`) || `Box ${boxes.length + 1}`;
+      const box = new BoundingBox(1, 1, 1, hit.point, 0xffff00, label);
       boxes.push(box);
       scene.add(box.mesh);
       activeBox = box;
@@ -208,3 +214,44 @@ function downloadPointsAsJSON(points: number[][]) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+function downloadAllBoxesAsLabeledJSON() {
+  const { scene } = getViewerElements();
+  const result: { label: string; points: number[][] }[] = [];
+
+  boxes.forEach((box) => {
+    const box3 = new THREE.Box3().setFromObject(box.mesh);
+    const collected: number[][] = [];
+
+    scene.traverse(obj => {
+      if (obj instanceof THREE.Points) {
+        const geometry = obj.geometry as THREE.BufferGeometry;
+        const position = geometry.getAttribute('position');
+        for (let i = 0; i < position.count; i++) {
+          const point = new THREE.Vector3().fromBufferAttribute(position, i);
+          obj.localToWorld(point);
+          if (box3.containsPoint(point)) {
+            collected.push([point.x, point.y, point.z]);
+          }
+        }
+      }
+    });
+
+    result.push({
+      label: box.label,
+      points: collected
+    });
+  });
+
+  const blob = new Blob([JSON.stringify(result, null, 2)], {
+    type: 'application/json'
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'labeled_points.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+

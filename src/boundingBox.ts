@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+const MIN_DIM = 0.01;
+
 export class BoundingBox {
   public mesh: THREE.Mesh;
   public facePlanes: THREE.Mesh[] = [];
@@ -10,7 +12,8 @@ export class BoundingBox {
     public width = 1,
     public height = 1,
     public position = new THREE.Vector3(0, 0, 0),
-    public color = 0xffff00
+    public color = 0xffff00,
+    public label: string = 'Unlabeled' 
   ) {
     this.mesh = this._createBoxMesh();
     this.mesh.position.copy(this.position);
@@ -18,6 +21,7 @@ export class BoundingBox {
     this.mesh.add(this.centerHandle);
     this._createFacePlanes();
   }
+  
 
   private _createBoxMesh(): THREE.Mesh {
     const geometry = new THREE.BoxGeometry(this.length, this.height, this.width);
@@ -99,13 +103,13 @@ export class BoundingBox {
     axis = axis.clone().normalize();
 
     if (axis.x !== 0) {
-      const newLength = Math.max(0.1, this.length + delta * axis.x);
+      const newLength = Math.max(MIN_DIM, this.length + delta * axis.x);
       this.setDimensions(newLength, this.width, this.height);
     } else if (axis.y !== 0) {
-      const newHeight = Math.max(0.1, this.height + delta * axis.y);
+      const newHeight = Math.max(MIN_DIM, this.height + delta * axis.y);
       this.setDimensions(this.length, this.width, newHeight);
     } else if (axis.z !== 0) {
-      const newWidth = Math.max(0.1, this.width + delta * axis.z);
+      const newWidth = Math.max(MIN_DIM, this.width + delta * axis.z);
       this.setDimensions(this.length, newWidth, this.height);
     }
   }
