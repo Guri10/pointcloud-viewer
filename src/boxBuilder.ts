@@ -1,153 +1,257 @@
 import * as THREE from 'three';
 import { getViewerElements } from './viewer';
+import { BoundingBox } from './boundingBox';
 
-enum BoxMode {
-  Idle,
-  PickingCorner,
-  Rotating,
-  Spanning
-}
-
-let mode: BoxMode = BoxMode.Idle;
-let currentRotation = 0;
-let points: THREE.Vector3[] = [];
-let tempBox: THREE.Mesh | null = null;
-let tempHelper: THREE.AxesHelper | null = null;
+let mode: 'idle' | 'placing' | 'resizing' | 'moving' = 'idle';
+let boxes: BoundingBox[] = [];
+let activeBox: BoundingBox | null = null;
+let pointerDown = false;
+let dragAxis = new THREE.Vector3();
+let dragOffset = new THREE.Vector3();
+let movePlane: THREE.Plane | null = null;
+let moveOffset = new THREE.Vector3();
 
 export function initBoxBuilder() {
-  const { renderer, scene, camera } = getViewerElements();
+  const { scene, camera, renderer, controls } = getViewerElements();
   const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
 
-  // Key to start placing a new box
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(100, 100),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  ground.rotateX(-Math.PI / 2);
+  scene.add(ground);
+
+
   window.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() === 'n') {
-      console.log("📦 Starting new box: Pick front-top corner");
-      resetState(scene);
-      mode = BoxMode.PickingCorner;
+    const key = e.key.toLowerCase();
+
+    if (key === 'n') {
+      mode = 'placing';
+      controls.enabled = false;
+      console.log("🟩 Placement mode: Click to place a new box.");
+    }
+
+    if (key === 'm') {
+      if (boxes.length > 0) {
+        mode = 'moving';
+        console.log("🔄 Move mode: Click any box center to move.");
+      }
+    }
+
+    if (key === 'r') {
+      if (boxes.length > 0) {
+        mode = 'resizing';
+        console.log("📐 Resize mode: Click any face to resize.");
+      }
+    }
+
+    if (key === 'e') {
+      if (!activeBox) {
+        console.warn('❌ No active box selected.');
+        return;
+      }
+      const box = activeBox.mesh;
+      const points = extractPointsInsideBox(box);
+      downloadPointsAsJSON(points);
+    }
+
+    if (key === 'l') {
+      downloadAllBoxesAsLabeledJSON();
     }
   });
 
-  // Adjust rotation with scroll wheel
-  renderer.domElement.addEventListener('wheel', (e) => {
-    if (mode === BoxMode.Rotating) {
-      currentRotation += e.deltaY * 0.01;
-      updateGhostBox(scene);
-    }
-  });
 
-  // Clicks for point selection
-  renderer.domElement.addEventListener('click', (e) => {
-    if (mode === BoxMode.Idle) return;
+  renderer.domElement.addEventListener('pointermove', (e) => {
+    if (!pointerDown || !activeBox) return;
 
-    // Get clicked 3D point
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    const intersect = getIntersect(
+      e,
+      camera,
+      renderer,
+      mode === 'moving' ? [activeBox.centerHandle] : activeBox.facePlanes
+    );
+    if (!intersect) return;
+
+    const mouse = getMouseVector(e, renderer);
     raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(scene.children, true);
-    if (intersects.length === 0) return;
 
-    const point = intersects[0].point.clone();
+    if (mode === 'resizing') {
+      const delta = intersect.point.clone().sub(dragOffset);
+      const movement = dragAxis.dot(delta);
+      activeBox.resizeAlongAxis(dragAxis, movement);
+      dragOffset.copy(intersect.point);
+    } else if (mode === 'moving' && movePlane) {
+      const hitPoint = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(movePlane, hitPoint)) {
+        const newPos = hitPoint.sub(moveOffset);
+        activeBox.mesh.position.copy(newPos);
+      }
+    }
+  });
 
-    if (mode === BoxMode.PickingCorner) {
-      points.push(point);
-      currentRotation = 0;
-      mode = BoxMode.Rotating;
-      createGhostBox(scene);
-      console.log("🔁 Scroll to rotate, click again to confirm rotation");
-    } else if (mode === BoxMode.Rotating) {
-        mode = BoxMode.Spanning;
-      console.log("📐 Now define length, width, and height (3 more clicks)");
-    } else if (mode === BoxMode.Spanning) {
-      if (points.length < 4) {
-        const lockedPoint = applyConstraints(point);
-        points.push(lockedPoint);
-        updateGhostBox(scene);
-        if (points.length === 4) {
-          finalizeBox(scene);
-          resetState(scene);
+  // 🖱 Pointer down
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    pointerDown = true;
+
+    const { camera, renderer, controls } = getViewerElements();
+
+    if (mode === 'placing') {
+      const hit = getIntersect(e, camera, renderer, [ground]);
+      if (!hit) return;
+
+      // const box = new BoundingBox(1, 1, 1, hit.point);
+      const label = prompt("Enter label for this box:", `Box ${boxes.length + 1}`) || `Box ${boxes.length + 1}`;
+      const box = new BoundingBox(1, 1, 1, hit.point, 0xffff00, label);
+      boxes.push(box);
+      scene.add(box.mesh);
+      activeBox = box;
+      mode = 'idle';
+      controls.enabled = true;
+      return;
+    }
+
+    // Check all boxes
+    for (const box of boxes) {
+      const targets = mode === 'moving' ? [box.centerHandle] : box.facePlanes;
+      const intersect = getIntersect(e, camera, renderer, targets);
+
+      if (intersect) {
+        activeBox = box;
+
+        const mouse = getMouseVector(e, renderer);
+        raycaster.setFromCamera(mouse, camera);
+
+        if (mode === 'resizing') {
+          dragAxis.copy(intersect.object.userData.axis).normalize();
+          dragOffset.copy(intersect.point);
+          controls.enabled = false;
+          console.log("📐 Resizing on axis:", dragAxis);
+        } else if (mode === 'moving') {
+          movePlane = new THREE.Plane();
+          movePlane.setFromNormalAndCoplanarPoint(
+            camera.getWorldDirection(new THREE.Vector3()),
+            box.mesh.position
+          );
+
+          const hitPoint = new THREE.Vector3();
+          if (raycaster.ray.intersectPlane(movePlane, hitPoint)) {
+            moveOffset.copy(hitPoint).sub(box.mesh.position);
+            controls.enabled = false;
+          }
+        }
+
+        break; // stop after the first interactive box
+      }
+    }
+  });
+
+
+  renderer.domElement.addEventListener('pointerup', () => {
+    pointerDown = false;
+    movePlane = null;
+    dragOffset.set(0, 0, 0);
+    dragAxis.set(0, 0, 0);
+    getViewerElements().controls.enabled = true;
+    if (mode !== 'placing') mode = 'idle';
+  });
+}
+
+
+function getIntersect(
+  e: PointerEvent,
+  camera: THREE.Camera,
+  renderer: THREE.WebGLRenderer,
+  objects: THREE.Object3D[]
+): THREE.Intersection | null {
+  const raycaster = new THREE.Raycaster();
+  const mouse = getMouseVector(e, renderer);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(objects, true);
+  return hits[0] || null;
+}
+
+
+function getMouseVector(e: PointerEvent, renderer: THREE.WebGLRenderer): THREE.Vector2 {
+  return new THREE.Vector2(
+    (e.clientX / renderer.domElement.clientWidth) * 2 - 1,
+    -(e.clientY / renderer.domElement.clientHeight) * 2 + 1
+  );
+}
+
+
+function extractPointsInsideBox(box: THREE.Mesh): number[][] {
+  const { scene } = getViewerElements();
+  const box3 = new THREE.Box3().setFromObject(box);
+  const pointsInside: number[][] = [];
+
+  scene.traverse(obj => {
+    if (obj instanceof THREE.Points) {
+      const geometry = obj.geometry as THREE.BufferGeometry;
+      const position = geometry.getAttribute('position');
+      for (let i = 0; i < position.count; i++) {
+        const point = new THREE.Vector3().fromBufferAttribute(position, i);
+        obj.localToWorld(point); 
+        if (box3.containsPoint(point)) {
+          pointsInside.push([point.x, point.y, point.z]);
         }
       }
     }
   });
+
+  console.log(`✅ ${pointsInside.length} points inside the active box`);
+  return pointsInside;
 }
 
-// 🔄 Lock width to Z and height to Y axis
-function applyConstraints(point: THREE.Vector3): THREE.Vector3 {
-  const base = points[0].clone();
-  if (points.length === 2) {
-    // lock Z to same value as base
-    point.z = base.z;
-  } else if (points.length === 3) {
-    point.z = points[2].z; // keep same Z as width point
-    point.x = points[2].x; // keep same X as width point
-  }
-  return point;
-}
-
-function createGhostBox(scene: THREE.Scene) {
-  const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const material = new THREE.MeshBasicMaterial({
-    color: 0x00ff00,
-    wireframe: true,
-    opacity: 0.5,
-    transparent: true,
+function downloadPointsAsJSON(points: number[][]) {
+  const blob = new Blob([JSON.stringify(points, null, 2)], {
+    type: 'application/json'
   });
-  tempBox = new THREE.Mesh(geometry, material);
-  tempHelper = new THREE.AxesHelper(1);
-  tempBox.add(tempHelper);
-  scene.add(tempBox);
-  updateGhostBox(scene);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'selected_points.json';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-function updateGhostBox(scene: THREE.Scene) {
-  if (!tempBox || points.length < 1) return;
+function downloadAllBoxesAsLabeledJSON() {
+  const { scene } = getViewerElements();
+  const result: { label: string; points: number[][] }[] = [];
 
-  const origin = points[0];
-  const length = points[1] ? points[0].distanceTo(points[1]) : 1;
+  boxes.forEach((box) => {
+    const box3 = new THREE.Box3().setFromObject(box.mesh);
+    const collected: number[][] = [];
 
-  tempBox.position.copy(origin);
-  tempBox.rotation.y = currentRotation;
-  tempBox.scale.set(length, 1, 1);
-}
+    scene.traverse(obj => {
+      if (obj instanceof THREE.Points) {
+        const geometry = obj.geometry as THREE.BufferGeometry;
+        const position = geometry.getAttribute('position');
+        for (let i = 0; i < position.count; i++) {
+          const point = new THREE.Vector3().fromBufferAttribute(position, i);
+          obj.localToWorld(point);
+          if (box3.containsPoint(point)) {
+            collected.push([point.x, point.y, point.z]);
+          }
+        }
+      }
+    });
 
-function finalizeBox(scene: THREE.Scene) {
-  const base = points[0];
-  const lengthVec = new THREE.Vector3().subVectors(points[1], base);
-  const widthVec = new THREE.Vector3().subVectors(points[2], points[1]);
-  const heightVec = new THREE.Vector3().subVectors(points[3], points[2]);
-
-  const size = new THREE.Vector3(
-    lengthVec.length(),
-    heightVec.length(),
-    widthVec.length()
-  );
-
-  const center = base.clone().add(lengthVec).add(heightVec).add(widthVec).multiplyScalar(0.5);
-
-  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
-  const material = new THREE.MeshBasicMaterial({
-    color: 0xffff00,
-    wireframe: true
+    result.push({
+      label: box.label,
+      points: collected
+    });
   });
 
-  const box = new THREE.Mesh(geometry, material);
-  box.position.copy(center);
-  box.rotation.y = currentRotation;
-
-  scene.add(box);
-  console.log("✅ Box placed");
+  const blob = new Blob([JSON.stringify(result, null, 2)], {
+    type: 'application/json'
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'labeled_points.json';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-function resetState(scene: THREE.Scene) {
-  points.length = 0;
-  mode = BoxMode.Idle;
-  if (tempBox) {
-    scene.remove(tempBox);
-    tempBox = null;
-  }
-  if (tempHelper) {
-    scene.remove(tempHelper);
-    tempHelper = null;
-  }
-}
+
